@@ -1,3 +1,0 @@
-[submodule "modules/islandora_rest"]
-	path = modules/islandora_rest
-	url = https://github.com/discoverygarden/islandora_rest.git
