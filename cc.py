@@ -228,6 +228,6 @@ api.add_route("/migrate/OralHistory/{pid}", OralHistory())
 
 
 if __name__ == "__main__":
-    api.main()
+    semantic_server.app.main()
 
 
