@@ -1,5 +1,5 @@
 """Module is a collection of scripts for migrating Colorado College's
-Fedora 3.4 repository to an Islandora 7.x/Fedora 3.7x 
+Fedora 3.4 repository to an Islandora 7.x/Fedora 3.7x
 """
 __author__ = "Jeremy Nelson"
 
@@ -24,9 +24,9 @@ class Migration(object):
             config['FEDORA3']['port'])
 
     def __add_child_object__(self, pid, element, namespace="coccc"):
-        """Internal method takes a PID and datastream element, 
+        """Internal method takes a PID and datastream element,
         retrieves content from datastream element and creates a
-        new Islandora Object with a child relationship to the 
+        new Islandora Object with a child relationship to the
         pid (pid must have islandora:compoundCModel compound object.
 
         Args:
@@ -38,7 +38,7 @@ class Migration(object):
             namespace)
         new_pid = add_child_result.get('pid')
         print("New pid is {}\n{}".format(new_pid, add_child_result))
-        # Add as child to PID  
+        # Add as child to PID
         islandora_relationship.__add__(
             "info:fedora/fedora-system:def/relations-external#",
             "isConstituentOf",
@@ -51,8 +51,9 @@ class Migration(object):
             "hasModel",
             content_model,
             new_pid)
-	# Add original datastream as new Islandora Object Datastream
-        self.__add_datastream__(new_pid, element)
+        print("After adding content_model={} pid={} new pid={}".format(content_model, pid, new_pid))
+        # Add original datastream as new Islandora Object Datastream
+        self.__add_datastream__(pid, element)
 
 
 
@@ -63,7 +64,7 @@ class Migration(object):
 
         Args:
             pid -- pid of Fedora and Islandora Object
-            element -- datastream element 
+            element -- datastream element
         """
         base_url = "/".join([self.fedora_rest_url,
                              pid,
@@ -72,25 +73,32 @@ class Migration(object):
         info_url = "/".join([base_url, "?format=xml"])
         info_xml = self.__get_xml__(info_url)
         download_url = "/".join([base_url, "content?download=true"])
+        print("Download url is {}".format(download_url))
         result = requests.get(download_url, auth=self.auth)
+        if result.status_code > 399:
+            raise falcon.HTTPInternalServerError(
+                "Could not retrieve datastream {} for pid {}".format(
+                   element.get('dsid'), pid),
+                "Datastream download url is {}, error is\n{}".format(
+                    download_url, result.text))
         datastream = result.text
         data = {
             'dsid': element.get('dsid'),
             'label': element.get('label'),
             'mimeType': element.get('mimeType'),
             'controlGroup': info_xml.get('{{{}}}dsControlGroup'.format(
-                                Migration.FEDORA_ACCESS)).text,      
+                                Migration.FEDORA_ACCESS)).text,
             'state': info_xml.get("{{{}}}dsState".format(
                          Migration.FEDORA_ACCESS)).text}
         islandora_datastream.__add__(
-            data, 
-            datastream, 
-            pid, 
-            element.get('dsid'))                                 
-        
- 
+            data,
+            datastream,
+            pid,
+            element.get('dsid'))
+
+
     def __get_datastreams__(self, pid):
-        datastream_url = "/".join([self.fedora_rest_url, 
+        datastream_url = "/".join([self.fedora_rest_url,
                                    pid,
                                    "datastreams?format=xml"])
         ds_xml = self.__get_xml__(datastream_url)
@@ -112,8 +120,8 @@ class Migration(object):
 	    NAMESPACES.get('fedora'))).get("{{{}}}resource".format(rdflib.RDF))
         if raw_pid:
             return raw_pid.split("/")[-1]
-         
-                    
+
+
     def __get_xml__(self, url):
         result = requests.get(url, auth=self.auth)
         if result.status_code > 399:
@@ -122,11 +130,11 @@ class Migration(object):
                 "XML url is {}, error is\n{}".format(
                     url, result.text))
         return etree.XML(result.text)
-   
+
 
     def __guess_islandora_content_model__(self, mime_type):
-        if ["image/jpeg", 
-            "image/png", 
+        if ["image/jpeg",
+            "image/png",
             "image/gif"].count(mime_type) > 0:
             return 'islandora:sp_basic_image'
         if mime_type.endswith("tiff"):
@@ -139,11 +147,11 @@ class Migration(object):
             return 'islandora:sp_pdf'
         # Default is a compound content model
         return 'islandora:compoundCModel'
-        
 
-    def __migrate_object__(self, 
-            pid, 
-            content_model='islandora:compoundCModel', 
+
+    def __migrate_object__(self,
+            pid,
+            content_model='islandora:compoundCModel',
             namespace='coccc'):
         """Internal method takes a pid, creates a new Islandora Object
 
@@ -171,7 +179,8 @@ class Migration(object):
             pid)
 
 
- 
+
+
     def get_object(self, pid):
         profile_url = "{}/{}?format=xml".format(self.fedora_rest_url,
                                                 pid)
@@ -182,19 +191,20 @@ class Migration(object):
                 "Profile url is {}".format(profile_url))
         profile = etree.XML(result.text)
         data = {"namespace": "coccc"}
-        data['label'] = profile.find( 
+        data['label'] = profile.find(
             "{{{}}}objLabel".format(Migration.FEDORA_ACCESS)).text
-        data['state'] = profile.find( 
+        data['state'] = profile.find(
             "{{{}}}objState".format(Migration.FEDORA_ACCESS)).text
         return data
-       
+
 
 class OralHistory(Migration):
-   
+
     def __migrate__(self, pid):
         self.__migrate_object__(pid)
         datastreams = self.__get_datastreams__(pid)
         for ds in datastreams:
+            print("\t{}".format(ds.get('dsid')))
             mime_type = ds.get('mimeType')
             # Saves DC and MODS as object datastreams
             if ['DC', 'MODS'].count(ds.get('dsid')):
@@ -203,26 +213,27 @@ class OralHistory(Migration):
             if mime_type.endswith('pdf'):
                 self.__add_child_object__(pid, ds)
             # Only saves images that do not have 'thumbnail' in label
-            if ['image/jpeg', 
-                'image/jpg', 
-                'image/png', 
+            if ['image/jpeg',
+                'image/jpg',
+                'image/png',
                 'image/gif'].count(mime_type) > 0:
                 if ds.get('label').lower().find("thumbnail") < 0:
                     self.__add_child_object__(pid, ds)
             # Saves any wav files, ignores other mp3 or ogg files
             if mime_type.endswith("wav"):
-                self.__add_child_object__(pid, ds) 
-        return True          
+                self.__add_child_object__(pid, ds)
+        return True
 
 
-    def on_put(self, req, resp, pid):
-        resp.status = falcon.HTTP_201
+    def on_post(self, req, resp, pid):
         if self.__migrate__(pid):
+            resp.status = falcon.HTTP_201
             msg = "Oral History {} Successfully Migrated".format(pid)
         else:
+            resp.status = falcon.HTTP_400
             msg = "Failed to migrate {}".format(pid)
         resp.body = {"message": msg}
-        
+
 
 api.add_route("/migrate/OralHistory/{pid}", OralHistory())
 
